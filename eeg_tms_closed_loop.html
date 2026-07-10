@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EEG-TMS 闭环交互界面 | 脑机接口医疗器械</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg-primary:#0a0e17;--bg-secondary:#111827;--bg-tertiary:#1a2332;
+  --bg-panel:#141e2d;--border:#1e3048;--border-active:#2563eb;
+  --text-primary:#e2e8f0;--text-secondary:#94a3b8;--text-muted:#64748b;
+  --accent-blue:#3b82f6;--accent-cyan:#06b6d4;--accent-green:#10b981;
+  --accent-yellow:#f59e0b;--accent-red:#ef4444;--accent-purple:#8b5cf6;
+  --font-mono:'Consolas','Cascadia Code','Courier New',monospace;
+  --font-ui:'Segoe UI','Microsoft YaHei',sans-serif;
+}
+body{
+  font-family:var(--font-ui);background:var(--bg-primary);color:var(--text-primary);
+  height:100vh;overflow:hidden;display:flex;flex-direction:column;
+  user-select:none;-webkit-user-select:none;
+}
+/* Top Header */
+.header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:8px 20px;background:var(--bg-secondary);border-bottom:1px solid var(--border);
+  flex-shrink:0;z-index:10;
+}
+.header-left{display:flex;align-items:center;gap:16px}
+.logo-icon{width:36px;height:36px;border-radius:8px;background:linear-gradient(135deg,var(--accent-blue),var(--accent-cyan));
+  display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:bold;color:#fff}
+.header-title{font-size:18px;font-weight:600;letter-spacing:0.5px}
+.header-title span{color:var(--accent-cyan)}
+.system-tag{font-size:11px;padding:2px 8px;border-radius:4px;background:rgba(59,130,246,0.15);color:var(--accent-blue);border:1px solid rgba(59,130,246,0.3)}
+.header-right{display:flex;align-items:center;gap:20px;font-size:13px;color:var(--text-secondary)}
+.status-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
+.status-dot.green{background:var(--accent-green);box-shadow:0 0 8px rgba(16,185,129,0.5)}
+.status-dot.yellow{background:var(--accent-yellow);box-shadow:0 0 8px rgba(245,158,11,0.5)}
+.status-dot.red{background:var(--accent-red);box-shadow:0 0 8px rgba(239,68,68,0.5)}
+.clock{font-family:var(--font-mono);font-size:14px;color:var(--accent-cyan)}
+
+/* Main Layout */
+.main{display:flex;flex:1;gap:0;overflow:hidden}
+.panel{display:flex;flex-direction:column;overflow:hidden;border-right:1px solid var(--border)}
+.panel:last-child{border-right:none}
+
+/* Left Panel - EEG */
+.panel-eeg{flex:0 0 34%;min-width:380px}
+/* Center Panel - Decoding */
+.panel-decode{flex:0 0 33%;min-width:360px}
+/* Right Panel - TMS */
+.panel-tms{flex:0 0 33%;min-width:360px}
+
+.panel-header{
+  padding:10px 16px;background:var(--bg-secondary);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;flex-shrink:0;
+}
+.panel-title{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:1px;display:flex;align-items:center;gap:8px}
+.panel-icon{width:20px;height:20px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px}
+.panel-icon.blue{background:rgba(59,130,246,0.2);color:var(--accent-blue)}
+.panel-icon.purple{background:rgba(139,92,246,0.2);color:var(--accent-purple)}
+.panel-icon.green{background:rgba(16,185,129,0.2);color:var(--accent-green)}
+.panel-badge{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:500}
+.panel-badge.online{background:rgba(16,185,129,0.15);color:var(--accent-green)}
+
+.panel-body{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px}
+.panel-body::-webkit-scrollbar{width:4px}
+.panel-body::-webkit-scrollbar-track{background:transparent}
+.panel-body::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+
+/* EEG Waveform */
+.eeg-channels{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.eeg-channel{
+  background:var(--bg-panel);border:1px solid var(--border);border-radius:6px;
+  padding:8px;position:relative;overflow:hidden;
+}
+.eeg-channel.active{border-color:var(--accent-blue);box-shadow:0 0 12px rgba(59,130,246,0.1)}
+.eeg-ch-label{font-size:11px;color:var(--text-secondary);margin-bottom:4px;display:flex;justify-content:space-between}
+.eeg-ch-value{font-family:var(--font-mono);font-size:10px;color:var(--accent-cyan)}
+canvas.eeg-canvas{width:100%;height:70px;display:block;border-radius:3px;background:rgba(0,0,0,0.3)}
+
+/* Spectral */
+.spectral-section{margin-top:4px}
+.spectral-title{font-size:11px;color:var(--text-secondary);margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.spectral-bars{display:flex;align-items:flex-end;gap:3px;height:60px;padding:4px;background:var(--bg-panel);border-radius:6px;border:1px solid var(--border)}
+.spectral-bar{flex:1;border-radius:2px 2px 0 0;transition:height 0.3s ease;min-width:6px}
+.spectral-labels{display:flex;justify-content:space-between;font-size:9px;color:var(--text-muted);margin-top:2px;padding:0 4px}
+
+/* Impedance */
+.impedance-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
+.impedance-item{text-align:center;padding:6px 4px;background:var(--bg-panel);border-radius:4px;border:1px solid var(--border)}
+.impedance-item.good{border-color:rgba(16,185,129,0.3)}
+.impedance-item.warn{border-color:rgba(245,158,11,0.3)}
+.impedance-label{font-size:9px;color:var(--text-muted)}
+.impedance-value{font-size:13px;font-family:var(--font-mono);font-weight:600}
+.impedance-value.good{color:var(--accent-green)}
+.impedance-value.warn{color:var(--accent-yellow)}
+
+/* Decode Panel */
+.decode-features{display:flex;flex-direction:column;gap:8px}
+.feature-card{
+  background:var(--bg-panel);border:1px solid var(--border);border-radius:6px;
+  padding:10px 12px;
+}
+.feature-card.triggered{border-color:var(--accent-purple);box-shadow:0 0 16px rgba(139,92,246,0.15);animation:pulse-border 1.5s ease-in-out infinite}
+@keyframes pulse-border{0%,100%{box-shadow:0 0 8px rgba(139,92,246,0.1)}50%{box-shadow:0 0 20px rgba(139,92,246,0.3)}}
+.feature-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.feature-name{font-size:12px;font-weight:500;color:var(--text-primary)}
+.feature-value{font-size:13px;font-family:var(--font-mono);font-weight:600}
+.feature-bar-track{height:6px;background:rgba(255,255,255,0.05);border-radius:3px;overflow:hidden;margin-bottom:4px}
+.feature-bar-fill{height:100%;border-radius:3px;transition:width 0.3s ease}
+.feature-bar-fill.alpha{background:linear-gradient(90deg,#3b82f6,#60a5fa)}
+.feature-bar-fill.beta{background:linear-gradient(90deg,#06b6d4,#22d3ee)}
+.feature-bar-fill.gamma{background:linear-gradient(90deg,#8b5cf6,#a78bfa)}
+.feature-bar-fill.erd{background:linear-gradient(90deg,#f59e0b,#fbbf24)}
+.feature-bar-fill.ers{background:linear-gradient(90deg,#10b981,#34d399)}
+.feature-threshold{font-size:9px;color:var(--text-muted)}
+
+.classifier-box{
+  background:var(--bg-panel);border:1px solid var(--border);border-radius:6px;
+  padding:12px;text-align:center;
+}
+.classifier-label{font-size:11px;color:var(--text-secondary);margin-bottom:6px}
+.classifier-state{
+  font-size:22px;font-weight:700;font-family:var(--font-mono);padding:8px 16px;
+  border-radius:6px;display:inline-block;letter-spacing:2px;
+}
+.classifier-state.rest{background:rgba(59,130,246,0.1);color:var(--accent-blue);border:1px solid rgba(59,130,246,0.3)}
+.classifier-state.active{background:rgba(139,92,246,0.1);color:var(--accent-purple);border:1px solid rgba(139,92,246,0.3);animation:pulse-text 1s ease-in-out infinite}
+@keyframes pulse-text{0%,100%{opacity:1}50%{opacity:0.6}}
+.classifier-confidence{font-size:11px;color:var(--text-muted);margin-top:4px}
+
+/* TMS Panel */
+.tms-params{display:flex;flex-direction:column;gap:8px}
+.param-row{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:8px 12px;background:var(--bg-panel);border-radius:6px;border:1px solid var(--border);
+}
+.param-label{font-size:12px;color:var(--text-secondary)}
+.param-value{font-size:14px;font-family:var(--font-mono);font-weight:600;color:var(--accent-cyan)}
+.param-slider{width:100%;margin-top:6px;-webkit-appearance:none;height:4px;border-radius:2px;background:var(--border);outline:none}
+.param-slider::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--accent-cyan);cursor:pointer;border:2px solid var(--bg-secondary)}
+.tms-target{
+  display:grid;grid-template-columns:repeat(2,1fr);gap:6px;
+}
+.tms-target-btn{
+  padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--bg-panel);
+  color:var(--text-secondary);font-size:11px;text-align:center;cursor:pointer;transition:all 0.2s;
+}
+.tms-target-btn:hover{border-color:var(--accent-cyan);color:var(--text-primary)}
+.tms-target-btn.selected{border-color:var(--accent-green);background:rgba(16,185,129,0.1);color:var(--accent-green)}
+.tms-trigger-indicator{
+  padding:12px;border-radius:8px;text-align:center;font-size:14px;font-weight:600;
+  border:2px solid var(--border);transition:all 0.2s;
+}
+.tms-trigger-indicator.ready{background:rgba(16,185,129,0.05);border-color:rgba(16,185,129,0.3);color:var(--accent-green)}
+.tms-trigger-indicator.firing{
+  background:rgba(239,68,68,0.1);border-color:rgba(239,68,68,0.4);color:var(--accent-red);
+  animation:fire-flash 0.15s ease-out;
+}
+@keyframes fire-flash{0%{box-shadow:0 0 30px rgba(239,68,68,0.6)}100%{box-shadow:0 0 0px rgba(239,68,68,0)}}
+
+/* Bottom - Closed Loop */
+.bottom-panel{
+  border-top:1px solid var(--border);background:var(--bg-secondary);flex-shrink:0;
+  display:flex;flex-direction:column;
+}
+.closed-loop-header{
+  padding:8px 16px;display:flex;align-items:center;justify-content:space-between;
+  border-bottom:1px solid var(--border);
+}
+.closed-loop-title{font-size:12px;font-weight:600;display:flex;align-items:center;gap:8px}
+.loop-diagram{display:flex;align-items:center;gap:6px;font-size:10px;padding:6px 16px}
+.loop-node{
+  padding:4px 10px;border-radius:12px;font-weight:500;font-size:10px;
+  border:1px solid;
+}
+.loop-node.eeg-node{background:rgba(59,130,246,0.1);border-color:rgba(59,130,246,0.3);color:var(--accent-blue)}
+.loop-node.decode-node{background:rgba(139,92,246,0.1);border-color:rgba(139,92,246,0.3);color:var(--accent-purple)}
+.loop-node.tms-node{background:rgba(16,185,129,0.1);border-color:rgba(16,185,129,0.3);color:var(--accent-green)}
+.loop-arrow{color:var(--text-muted);font-size:14px}
+.loop-arrow.active{color:var(--accent-cyan);animation:arrow-pulse 0.8s ease-in-out infinite}
+@keyframes arrow-pulse{0%,100%{opacity:0.4}50%{opacity:1}}
+
+.event-log{
+  flex:1;max-height:120px;overflow-y:auto;padding:6px 16px;font-family:var(--font-mono);font-size:10px;
+}
+.event-log::-webkit-scrollbar{width:4px}
+.event-log::-webkit-scrollbar-track{background:transparent}
+.event-log::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.log-entry{display:flex;gap:8px;padding:2px 0;color:var(--text-muted)}
+.log-time{color:var(--text-muted);flex-shrink:0}
+.log-type{flex-shrink:0;font-weight:600;width:32px}
+.log-type.eeg{color:var(--accent-blue)}
+.log-type.decode{color:var(--accent-purple)}
+.log-type.tms{color:var(--accent-green)}
+.log-type.sys{color:var(--accent-yellow)}
+.log-msg{color:var(--text-secondary)}
+
+/* Safety indicators */
+.safety-bar{
+  display:flex;gap:8px;padding:8px 16px;border-top:1px solid var(--border);
+}
+.safety-item{flex:1;text-align:center;font-size:10px;padding:6px;border-radius:4px;background:var(--bg-panel)}
+.safety-item.normal{color:var(--accent-green)}
+.safety-item.warning{color:var(--accent-yellow);animation:safety-blink 1s infinite}
+@keyframes safety-blink{0%,100%{opacity:1}50%{opacity:0.5}}
+
+/* Responsive tweaks */
+@media(max-width:1200px){
+  .main{flex-direction:column}
+  .panel{flex:1;min-width:auto;border-right:none;border-bottom:1px solid var(--border)}
+}
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-left">
+    <div class="logo-icon">🧠</div>
+    <div class="header-title">EEG-TMS <span>闭环交互系统</span></div>
+    <div class="system-tag">脑机接口医疗器械</div>
+  </div>
+  <div class="header-right">
+    <span><span class="status-dot green"></span>系统运行中</span>
+    <span><span class="status-dot green"></span>闭环已建立</span>
+    <span>采样率 1000 Hz</span>
+    <span>延迟 &lt; 20 ms</span>
+    <span class="clock" id="clock">--:--:--</span>
+  </div>
+</div>
+
+<!-- Main Content -->
+<div class="main">
+  <!-- Left: EEG Signal -->
+  <div class="panel panel-eeg">
+    <div class="panel-header">
+      <div class="panel-title"><span class="panel-icon blue">📡</span>EEG 神经信号采集</div>
+      <div class="panel-badge online">● 采集中</div>
+    </div>
+    <div class="panel-body">
+      <div class="eeg-channels" id="eegChannels"></div>
+      <div class="spectral-section">
+        <div class="spectral-title">📊 频谱分析 (0-50 Hz)</div>
+        <div class="spectral-bars" id="spectralBars"></div>
+        <div class="spectral-labels"><span>δ</span><span>θ</span><span>α</span><span>β</span><span>γ</span></div>
+      </div>
+      <div style="font-size:11px;color:var(--text-secondary);margin-top:4px">⚡ 电极阻抗监测</div>
+      <div class="impedance-grid" id="impedanceGrid"></div>
+    </div>
+  </div>
+
+  <!-- Center: Decoding -->
+  <div class="panel panel-decode">
+    <div class="panel-header">
+      <div class="panel-title"><span class="panel-icon purple">🔮</span>实时解码分析</div>
+      <div class="panel-badge online">● 解码中</div>
+    </div>
+    <div class="panel-body">
+      <div class="decode-features" id="decodeFeatures"></div>
+      <div class="classifier-box" id="classifierBox">
+        <div class="classifier-label">运动意图分类器</div>
+        <div class="classifier-state rest" id="classifierState">静息态</div>
+        <div class="classifier-confidence" id="classifierConf">置信度: --</div>
+      </div>
+      <div style="font-size:10px;color:var(--text-muted);text-align:center;margin-top:4px">
+        解码输出 → 直接驱动TMS刺激参数
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: TMS Control -->
+  <div class="panel panel-tms">
+    <div class="panel-header">
+      <div class="panel-title"><span class="panel-icon green">⚡</span>TMS 刺激控制</div>
+      <div class="panel-badge online">● 就绪</div>
+    </div>
+    <div class="panel-body">
+      <div class="tms-params">
+        <div class="param-row">
+          <span class="param-label">刺激强度 (%MSO)</span>
+          <span class="param-value" id="tmsIntensity">65</span>
+        </div>
+        <input type="range" class="param-slider" id="tmsIntensitySlider" min="20" max="100" value="65" style="accent-color:var(--accent-cyan)">
+        <div class="param-row">
+          <span class="param-label">刺激频率 (Hz)</span>
+          <span class="param-value" id="tmsFreq">10</span>
+        </div>
+        <input type="range" class="param-slider" id="tmsFreqSlider" min="1" max="50" value="10" style="accent-color:var(--accent-cyan)">
+        <div class="param-row">
+          <span class="param-label">脉冲数</span>
+          <span class="param-value" id="tmsPulses">20</span>
+        </div>
+        <input type="range" class="param-slider" id="tmsPulsesSlider" min="5" max="100" value="20" style="accent-color:var(--accent-cyan)">
+      </div>
+      <div style="font-size:11px;color:var(--text-secondary);margin-top:4px">🎯 刺激靶区</div>
+      <div class="tms-target" id="tmsTargets"></div>
+      <div class="tms-trigger-indicator ready" id="tmsTrigger">
+        ⏳ 等待解码触发信号...
+      </div>
+      <div style="font-size:10px;color:var(--text-muted);text-align:center">
+        刺激次数: <span id="stimCount" style="color:var(--accent-cyan);font-weight:600">0</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Bottom: Closed Loop -->
+<div class="bottom-panel">
+  <div class="closed-loop-header">
+    <div class="closed-loop-title">🔄 闭环反馈状态</div>
+    <span style="font-size:10px;color:var(--accent-green)">● 双向交互活跃</span>
+  </div>
+  <div class="loop-diagram">
+    <span class="loop-node eeg-node">🧠 CNS信号采集</span>
+    <span class="loop-arrow active" id="arrow1">→</span>
+    <span class="loop-node decode-node">🔮 实时解码</span>
+    <span class="loop-arrow active" id="arrow2">→</span>
+    <span class="loop-node tms-node">⚡ TMS刺激调控</span>
+    <span class="loop-arrow active" id="arrow3">→</span>
+    <span class="loop-node eeg-node">🧠 神经反馈</span>
+    <span style="font-size:10px;color:var(--accent-cyan);margin-left:12px">闭环延迟: <span id="loopLatency" style="font-weight:600">18</span>ms</span>
+  </div>
+  <div class="event-log" id="eventLog"></div>
+  <div class="safety-bar">
+    <div class="safety-item normal" id="safetyImpedance">✅ 阻抗正常 (&lt;5kΩ)</div>
+    <div class="safety-item normal" id="safetyTemp">✅ 线圈温度 32°C</div>
+    <div class="safety-item normal" id="safetyCharge">✅ 充电就绪</div>
+    <div class="safety-item normal" id="safetyEMG">✅ 无异常肌电</div>
+    <div class="safety-item normal" id="safetyDecode">✅ 解码置信度 &gt;80%</div>
+  </div>
+</div>
+
+<script>
+// ============ Clock ============
+function updateClock(){
+  const now=new Date();
+  document.getElementById('clock').textContent=now.toTimeString().slice(0,8);
+}
+setInterval(updateClock,1000);updateClock();
+
+// ============ EEG Channels ============
+const eegChannels=[
+  {name:'C3',label:'运动皮层 C3',color:'#3b82f6'},
+  {name:'C4',label:'运动皮层 C4',color:'#60a5fa'},
+  {name:'F3',label:'前额叶 F3',color:'#06b6d4'},
+  {name:'F4',label:'前额叶 F4',color:'#22d3ee'},
+  {name:'P3',label:'顶叶 P3',color:'#8b5cf6'},
+  {name:'P4',label:'顶叶 P4',color:'#a78bfa'}
+];
+
+const eegData=Array.from({length:6},()=>Array(200).fill(0));
+const canvases=[];
+const ctxs=[];
+
+const chContainer=document.getElementById('eegChannels');
+eegChannels.forEach((ch,i)=>{
+  const div=document.createElement('div');
+  div.className='eeg-channel active';
+  div.innerHTML=`
+    <div class="eeg-ch-label"><span>${ch.label}</span><span class="eeg-ch-value" id="chVal${i}">0.0 μV</span></div>
+    <canvas class="eeg-canvas" id="eegCanvas${i}"></canvas>
+  `;
+  chContainer.appendChild(div);
+});
+
+setTimeout(()=>{
+  eegChannels.forEach((ch,i)=>{
+    const canvas=document.getElementById('eegCanvas'+i);
+    canvas.width=canvas.offsetWidth*2;
+    canvas.height=canvas.offsetHeight*2;
+    canvases.push(canvas);
+    ctxs.push(canvas.getContext('2d'));
+  });
+},100);
+
+// ============ Spectral Bars ============
+const spectralContainer=document.getElementById('spectralBars');
+const spectralBarEls=[];
+const bands=['δ','θ','α','β','γ'];
+const bandColors=['#3b82f6','#06b6d4','#10b981','#f59e0b','#8b5cf6'];
+for(let i=0;i<30;i++){
+  const bar=document.createElement('div');
+  bar.className='spectral-bar';
+  bar.style.background=bandColors[Math.min(Math.floor(i/6),4)];
+  bar.style.height='5px';
+  spectralContainer.appendChild(bar);
+  spectralBarEls.push(bar);
+}
+
+// ============ Impedance ============
+const electrodeNames=['C3','C4','F3','F4','P3','P4','O1','O2'];
+const impGrid=document.getElementById('impedanceGrid');
+electrodeNames.forEach(name=>{
+  const div=document.createElement('div');
+  div.className='impedance-item good';
+  div.innerHTML=`<div class="impedance-label">${name}</div><div class="impedance-value good" id="imp${name}">2.5k</div>`;
+  impGrid.appendChild(div);
+});
+
+// ============ Decode Features ============
+const decodeFeatures=[
+  {name:'α 波功率 (8-13Hz)',id:'alpha',max:100,color:'alpha',thresh:60},
+  {name:'β 波功率 (13-30Hz)',id:'beta',max:100,color:'beta',thresh:50},
+  {name:'γ 波功率 (30-50Hz)',id:'gamma',max:100,color:'gamma',thresh:40},
+  {name:'感觉运动节律 ERD',id:'erd',max:100,color:'erd',thresh:55,invert:true},
+  {name:'事件相关同步 ERS',id:'ers',max:100,color:'ers',thresh:50},
+];
+
+const dfContainer=document.getElementById('decodeFeatures');
+const featureBars={};
+decodeFeatures.forEach(f=>{
+  const div=document.createElement('div');
+  div.className='feature-card';
+  div.id='featureCard_'+f.id;
+  div.innerHTML=`
+    <div class="feature-header">
+      <span class="feature-name">${f.name}</span>
+      <span class="feature-value" id="fv_${f.id}" style="color:var(--accent-${f.color==='alpha'?'blue':f.color==='beta'?'cyan':f.color==='gamma'?'purple':f.color==='erd'?'yellow':'green'})">0</span>
+    </div>
+    <div class="feature-bar-track"><div class="feature-bar-fill ${f.color}" id="fb_${f.id}" style="width:0%"></div></div>
+    <div class="feature-threshold">阈值: ${f.thresh} | ${f.invert?'低于阈值触发':'高于阈值触发'}</div>
+  `;
+  dfContainer.appendChild(div);
+  featureBars[f.id]=document.getElementById('fb_'+f.id);
+});
+
+// ============ TMS Targets ============
+const tmsTargets=['M1-左手','M1-右手','SMA','PMC','DLPFC-L','DLPFC-R'];
+const tmsTargetContainer=document.getElementById('tmsTargets');
+let selectedTarget='M1-右手';
+tmsTargets.forEach(t=>{
+  const btn=document.createElement('div');
+  btn.className='tms-target-btn'+(t===selectedTarget?' selected':'');
+  btn.textContent=t;
+  btn.onclick=()=>{
+    document.querySelectorAll('.tms-target-btn').forEach(b=>b.classList.remove('selected'));
+    btn.classList.add('selected');
+    selectedTarget=t;
+    addLog('sys','靶区切换: '+t);
+  };
+  tmsTargetContainer.appendChild(btn);
+});
+
+// ============ TMS Sliders ============
+document.getElementById('tmsIntensitySlider').oninput=function(){
+  document.getElementById('tmsIntensity').textContent=this.value;
+};
+document.getElementById('tmsFreqSlider').oninput=function(){
+  document.getElementById('tmsFreq').textContent=this.value;
+};
+document.getElementById('tmsPulsesSlider').oninput=function(){
+  document.getElementById('tmsPulses').textContent=this.value;
+};
+
+// ============ Event Log ============
+const eventLog=document.getElementById('eventLog');
+let stimCount=0;
+function addLog(type,msg){
+  const now=new Date();
+  const time=now.toTimeString().slice(0,8)+'.'+String(now.getMilliseconds()).padStart(3,'0');
+  const entry=document.createElement('div');
+  entry.className='log-entry';
+  entry.innerHTML=`<span class="log-time">${time}</span><span class="log-type ${type}">[${type.toUpperCase()}]</span><span class="log-msg">${msg}</span>`;
+  eventLog.insertBefore(entry,eventLog.firstChild);
+  if(eventLog.children.length>50)eventLog.lastChild.remove();
+}
+
+// ============ Simulation State ============
+let simTime=0;
+let motorImageryActive=false;
+let motorImageryTimer=0;
+let motorImageryDuration=0;
+let lastTriggerTime=0;
+const triggerCooldown=2000; // ms
+
+// ============ Main Simulation Loop ============
+function simulate(){
+  simTime+=0.016; // ~60fps
+
+  // Randomly activate motor imagery
+  if(!motorImageryActive){
+    if(Math.random()<0.008){
+      motorImageryActive=true;
+      motorImageryTimer=0;
+      motorImageryDuration=1.5+Math.random()*2.5; // 1.5-4s
+      addLog('decode','检测到运动想象活动启动');
+    }
+  }else{
+    motorImageryTimer+=0.016;
+    if(motorImageryTimer>motorImageryDuration){
+      motorImageryActive=false;
+      motorImageryTimer=0;
+      addLog('decode','运动想象活动消退');
+    }
+  }
+
+  // Generate EEG data
+  const motorStrength=motorImageryActive?Math.min(1,motorImageryTimer<0.3?motorImageryTimer/0.3:1):0;
+  for(let ch=0;ch<6;ch++){
+    const baseFreq=8+ch*3;
+    const amp=motorStrength*(ch<2?25:10); // C3/C4 stronger
+    for(let i=eegData[ch].length-1;i>0;i--){
+      eegData[ch][i]=eegData[ch][i-1];
+    }
+    eegData[ch][0]=Math.sin(simTime*baseFreq*2*Math.PI)*8
+      +Math.sin(simTime*20*2*Math.PI)*3
+      +(Math.random()-0.5)*4
+      -amp*Math.sin(simTime*10*2*Math.PI); // ERD during motor imagery (C3/C4)
+  }
+
+  // Draw EEG canvases
+  for(let ch=0;ch<6;ch++){
+    if(!ctxs[ch]||!canvases[ch])continue;
+    const ctx=ctxs[ch];
+    const w=canvases[ch].width;
+    const h=canvases[ch].height;
+    ctx.clearRect(0,0,w,h);
+    ctx.strokeStyle=eegChannels[ch].color;
+    ctx.lineWidth=2;
+    ctx.shadowColor=eegChannels[ch].color;
+    ctx.shadowBlur=4;
+    ctx.beginPath();
+    for(let i=0;i<eegData[ch].length;i++){
+      const x=(i/eegData[ch].length)*w;
+      const y=h/2-eegData[ch][i]*(h/60);
+      if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+    ctx.shadowBlur=0;
+
+    // Update value
+    const valEl=document.getElementById('chVal'+ch);
+    if(valEl){
+      const v=eegData[ch][0];
+      valEl.textContent=v.toFixed(1)+' μV';
+      valEl.style.color=Math.abs(v)>15?'var(--accent-yellow)':'var(--accent-cyan)';
+    }
+  }
+
+  // Update spectral
+  const specBase=[8,5,15+Math.sin(simTime*0.5)*8,10+Math.sin(simTime)*5,3+Math.sin(simTime*2)*2];
+  for(let i=0;i<30;i++){
+    const bandIdx=Math.floor(i/6);
+    const h=Math.max(2,(specBase[bandIdx]+(Math.random()-0.5)*8)*(motorImageryActive&&bandIdx>=2?1.8:1));
+    spectralBarEls[i].style.height=h+'px';
+    spectralBarEls[i].style.opacity=motorImageryActive&&bandIdx>=2?'1':'0.6';
+  }
+
+  // Update impedance (simulate slight variations)
+  electrodeNames.forEach(name=>{
+    const el=document.getElementById('imp'+name);
+    if(el){
+      const v=2.3+Math.random()*0.6;
+      el.textContent=v.toFixed(1)+'k';
+      el.className='impedance-value '+(v<5?'good':'warn');
+      const parent=el.parentElement;
+      parent.className='impedance-item '+(v<5?'good':'warn');
+    }
+  });
+
+  // Decode features
+  const alphaPow=motorImageryActive?25+Math.random()*15:45+Math.random()*20;
+  const betaPow=motorImageryActive?20+Math.random()*15:35+Math.random()*15;
+  const gammaPow=motorImageryActive?35+Math.random()*20:18+Math.random()*12;
+  const erd=motorImageryActive?85-Math.min(1,motorImageryTimer)*70+Math.random()*10:15+Math.random()*15;
+  const ers=motorImageryActive?10+Math.random()*10:5+Math.random()*5;
+
+  const featVals={alpha:alphaPow,beta:betaPow,gamma:gammaPow,erd:erd,ers:ers};
+
+  Object.entries(featVals).forEach(([id,val])=>{
+    const f=decodeFeatures.find(df=>df.id===id);
+    const pct=Math.min(100,Math.max(0,(val/f.max)*100));
+    const barEl=featureBars[id];
+    if(barEl)barEl.style.width=pct+'%';
+    const valEl=document.getElementById('fv_'+id);
+    if(valEl)valEl.textContent=Math.round(val);
+
+    // Check threshold
+    const card=document.getElementById('featureCard_'+id);
+    if(card){
+      const triggered=f.invert?val>f.thresh:val>f.thresh;
+      if(triggered)card.classList.add('triggered');
+      else card.classList.remove('triggered');
+    }
+  });
+
+  // Classifier
+  const classifierEl=document.getElementById('classifierState');
+  const confEl=document.getElementById('classifierConf');
+  const confidence=Math.round(erd>55?(erd-20):(20+Math.random()*15));
+  if(erd>55&&motorImageryActive){
+    classifierEl.textContent='运动想象';
+    classifierEl.className='classifier-state active';
+    confEl.textContent='置信度: '+confidence+'%';
+  }else{
+    classifierEl.textContent='静息态';
+    classifierEl.className='classifier-state rest';
+    confEl.textContent='置信度: '+(100-confidence)+'% (静息)';
+  }
+
+  // TMS Trigger Logic
+  const now=Date.now();
+  const triggerIndicator=document.getElementById('tmsTrigger');
+  if(erd>65&&motorImageryActive&&(now-lastTriggerTime)>triggerCooldown){
+    lastTriggerTime=now;
+    stimCount++;
+    document.getElementById('stimCount').textContent=stimCount;
+
+    // Flash TMS indicator
+    triggerIndicator.textContent='⚡ 触发放电! 靶区: '+selectedTarget;
+    triggerIndicator.className='tms-trigger-indicator firing';
+    setTimeout(()=>{
+      triggerIndicator.textContent='⏳ 等待解码触发信号...';
+      triggerIndicator.className='tms-trigger-indicator ready';
+    },300);
+
+    const intensity=document.getElementById('tmsIntensity').textContent;
+    const freq=document.getElementById('tmsFreq').textContent;
+    const pulses=document.getElementById('tmsPulses').textContent;
+    addLog('tms','触发刺激 | 靶区:'+selectedTarget+' 强度:'+intensity+'%MSO 频率:'+freq+'Hz 脉冲:'+pulses);
+
+    // Safety check simulation
+    if(stimCount%15===0){
+      document.getElementById('safetyTemp').className='safety-item warning';
+      document.getElementById('safetyTemp').textContent='⚠ 线圈温度 38°C';
+      addLog('sys','⚠ 安全提醒: 线圈温度升高,建议暂停');
+      setTimeout(()=>{
+        document.getElementById('safetyTemp').className='safety-item normal';
+        document.getElementById('safetyTemp').textContent='✅ 线圈温度 33°C';
+      },3000);
+    }
+  }else if(erd>55&&motorImageryActive){
+    triggerIndicator.textContent='🔍 解码就绪,等待置信度达标...';
+    triggerIndicator.className='tms-trigger-indicator ready';
+  }
+
+  // Update safety indicators
+  if(stimCount>0&&stimCount%20===0){
+    document.getElementById('safetyDecode').className='safety-item warning';
+    document.getElementById('safetyDecode').textContent='⚠ 建议重新校准';
+    setTimeout(()=>{
+      document.getElementById('safetyDecode').className='safety-item normal';
+      document.getElementById('safetyDecode').textContent='✅ 解码置信度 >80%';
+    },2000);
+  }
+
+  // Update loop latency
+  document.getElementById('loopLatency').textContent=Math.round(15+Math.random()*10);
+
+  requestAnimationFrame(simulate);
+}
+
+// ============ Init ============
+addLog('sys','EEG-TMS闭环交互系统初始化完成');
+addLog('sys','符合脑机接口医疗器械四项核心技术特征');
+addLog('sys','① CNS神经信号测量 ② 实时解码驱动 ③ 闭环双向交互 ④ CNS功能调控');
+addLog('eeg','EEG信号采集已启动 - 6通道 1000Hz');
+addLog('decode','实时解码引擎已就绪 - 特征提取+分类器');
+addLog('tms','TMS刺激系统已就绪 - 靶区:'+selectedTarget);
+
+// Start simulation
+requestAnimationFrame(simulate);
+
+// Handle resize for canvases
+window.addEventListener('resize',()=>{
+  setTimeout(()=>{
+    canvases.forEach((canvas,i)=>{
+      if(canvas){
+        canvas.width=canvas.offsetWidth*2;
+        canvas.height=canvas.offsetHeight*2;
+        ctxs[i]=canvas.getContext('2d');
+      }
+    });
+  },200);
+});
+</script>
+</body>
+</html>
